@@ -1,0 +1,30 @@
+#define PORT_RMOTOR OUT_B
+#define PORT_LMOTOR OUT_C
+#define PORT_MOTORS OUT_BC
+#define PORT_LIGHT  IN_4
+#define PORT_COLOR  IN_2
+#define PORT_US     IN_3
+
+#define TARGET_TIMEOUT 500
+
+task main() {
+    SetSensorUltraSonic(PORT_US);
+    bool charging = false;
+    unsigned int prevSeenTime = 0;
+    while(1) {
+        bool foundTarget = (SensorUS(PORT_US) < 100);
+        unsigned int time = CurrentTick();
+        if(foundTarget) {
+            charging = true;
+        } else if(time-prevSeenTime >= TARGET_TIMEOUT) {
+            charging = false;
+        }
+        if(charging) {
+            OnFwdSync(PORT_MOTORS,100,0);
+        } else {
+            OnFwdSync(PORT_MOTORS,75,-100);
+        }
+    }
+}
+
+
