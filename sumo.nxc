@@ -1,28 +1,48 @@
-#define PORT_RMOTOR OUT_B
-#define PORT_LMOTOR OUT_C
+#define PORT_RMOTOR OUT_C
+#define PORT_LMOTOR OUT_B
 #define PORT_MOTORS OUT_BC
-#define PORT_LIGHT  IN_4
-#define PORT_COLOR  IN_2
-#define PORT_US     IN_3
+#define PORT_LIGHT  IN_2
+#define PORT_COLOR  IN_3
+#define PORT_US     IN_4
 
 #define TARGET_TIMEOUT 500
 
 task main() {
-    SetSensorUltraSonic(PORT_US);
+    SetSensorUltrasonic(PORT_US);
+    SetSensorLight(PORT_LIGHT);
+    SetSensorType(PORT_COLOR, SENSOR_TYPE_LOWSPEED);
     bool charging = false;
     unsigned int prevSeenTime = 0;
+
+    PlayTone(TONE_C6,500);
+    Wait(5000);
+    int lightBaseline = Sensor(PORT_LIGHT);
+
     while(1) {
-        bool foundTarget = (SensorUS(PORT_US) < 100);
+        bool foundTarget = (SensorUS(PORT_US) < 40);
         unsigned int time = CurrentTick();
+        int light = Sensor(PORT_LIGHT);
+        int color = SensorHTColorNum(PORT_COLOR);
         if(foundTarget) {
+            if(!charging) {
+                //PlayTone(TONE_A5,500);
+            }
             charging = true;
+            prevSeenTime = time;
         } else if(time-prevSeenTime >= TARGET_TIMEOUT) {
             charging = false;
         }
         if(charging) {
-            OnFwdSync(PORT_MOTORS,100,0);
+            OnFwdSync(PORT_MOTORS,-100,0);
         } else {
-            OnFwdSync(PORT_MOTORS,75,-100);
+            Off(PORT_LMOTOR);
+            OnRev(PORT_RMOTOR,100);
+        }
+        if(true && (/*color == 15 || */light > lightBaseline+30)) {
+            //PlayTone(TONE_B5,500);
+            RotateMotorEx(PORT_MOTORS,100,200,0,true,false);
+            RotateMotor(PORT_RMOTOR,100,-400);
+            charging = false;
         }
     }
 }
