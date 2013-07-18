@@ -11,16 +11,38 @@
 #define STATE_CHARGING  1
 #define STATE_REVERSING 2
 
+bool enemyFound(byte portUS) {
+    return SensorUS(portUS) < 40;
+}
+void handleEnemies(byte portUS,int& state,
+                   long& prevSeenTime,long time) {
+    if(state != STATE_REVERSING && enemyFound(portUS)) {
+        if(state != STATE_CHARGING) {
+            Off(PORT_MOTORS);
+            state = STATE_CHARGING;
+        }
+        prevSeenTime = time;
+    }
+}
+
 task main() {
     SetSensorUltrasonic(PORT_US);
     SetSensorLight(PORT_RLIGHT);
     SetSensorType(PORT_LLIGHT, SENSOR_TYPE_LIGHT);
-    bool charging = false;
-    unsigned int prevSeenTime = 0;
 
-    PlayTone(TONE_C6,500);
-    Wait(5000);
+    PlayTone(TONE_B5,100);
+    Wait(990);
+    PlayTone(TONE_C6,100);
+    Wait(990);
+    PlayTone(TONE_C6,100);
+    Wait(990);
+    PlayTone(TONE_C6,100);
+    Wait(990);
+    PlayTone(TONE_C6,100);
+    Wait(990);
     PlayTone(TONE_D6,500);
+    unsigned int prevSeenTime    = 0,
+                 chargeBeginTime = 0;
     int rlightBaseline = Sensor(PORT_RLIGHT),
         llightBaseline = Sensor(PORT_LLIGHT)/10;
     bool foundTarget;
@@ -30,9 +52,11 @@ task main() {
     bool leftFound,rightFound;
     long startCount;
     int turnDir = 1;
+    int prevState;
 
     while(1) {
         time = CurrentTick();
+        handleEnemies(PORT_US,state,prevSeenTime,time);
         rlight = Sensor(PORT_RLIGHT);
         llight = Sensor(PORT_LLIGHT)/10;
         leftFound  = (llight > (llightBaseline+10));
@@ -42,37 +66,32 @@ task main() {
         } else if(rightFound) {
             turnDir = -1;
         }
-        if(state != STATE_REVERSING
-           && (leftFound || rightFound)) {
-            Off(PORT_MOTORS);
-            PlayTone(TONE_B5,200);
+        if(leftFound || rightFound) {
+            if(state != STATE_REVERSING) {
+                Off(PORT_MOTORS);
+                //PlayTone(TONE_B5,200);
+            }
             state = STATE_REVERSING;
             
             startCount = MotorRotationCount(PORT_LMOTOR);
-            RotateMotorEx(PORT_MOTORS,100,200,0,true,false);
-            RotateMotorEx(PORT_MOTORS,-100,400,100,true,false);
-            charging = false;
         }
     
-        int prevState = state;
+        handleEnemies(PORT_US,state,prevSeenTime,time);
+        prevState = state;
         switch(state) {
         case STATE_SEARCHING:
-            OnFwdSync(PORT_MOTORS,-100,turnDir*100);
-            foundTarget = (SensorUS(PORT_US) < 40);
-            if(foundTarget) {
-                state = STATE_CHARGING;
-                prevSeenTime = time;
-            }
+            OnFwd(PORT_LMOTOR,turnDir*-100);
+            OnFwd(PORT_RMOTOR,turnDir*100);
             break;
         case STATE_CHARGING:
-            OnFwdSync(PORT_MOTORS,-100,0);
+            OnFwd(PORT_MOTORS,-100);
             if(time-prevSeenTime >= TARGET_TIMEOUT) {
                 state = STATE_SEARCHING;
             }
             break;
         case STATE_REVERSING:
-            OnFwdSync(PORT_MOTORS,100,0);
-            if(abs(startCount-MotorRotationCount(PORT_LMOTOR)) > 400) {
+            OnFwd(PORT_MOTORS,100);
+            if(abs(startCount-MotorRotationCount(PORT_LMOTOR)) > 200) {
                 state = STATE_SEARCHING;
             }
             break;
