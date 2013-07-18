@@ -1,0 +1,17 @@
+#define PORT_RLIGHT IN_2
+#define PORT_LLIGHT IN_3
+
+
+task main() {
+    SetSensorLight(PORT_RLIGHT);
+    SetSensorType(PORT_LLIGHT,SENSOR_TYPE_LIGHT);
+    while(1) {
+        while(!ButtonState(BTNCENTER));
+        Wait(1000);
+        ClearLine(LCD_LINE1);
+        NumOut(0,LCD_LINE1,Sensor(PORT_RLIGHT));
+        ClearLine(LCD_LINE2);
+        NumOut(0,LCD_LINE2,Sensor(PORT_LLIGHT)/10);
+        PlayTone(TONE_C6,100);
+    }
+}

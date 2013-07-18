@@ -1,48 +1,84 @@
 #define PORT_RMOTOR OUT_C
 #define PORT_LMOTOR OUT_B
 #define PORT_MOTORS OUT_BC
-#define PORT_LIGHT  IN_2
-#define PORT_COLOR  IN_3
+#define PORT_RLIGHT IN_2
+#define PORT_LLIGHT IN_3
 #define PORT_US     IN_4
 
 #define TARGET_TIMEOUT 500
 
+#define STATE_SEARCHING 0
+#define STATE_CHARGING  1
+#define STATE_REVERSING 2
+
 task main() {
     SetSensorUltrasonic(PORT_US);
-    SetSensorLight(PORT_LIGHT);
-    SetSensorType(PORT_COLOR, SENSOR_TYPE_LOWSPEED);
+    SetSensorLight(PORT_RLIGHT);
+    SetSensorType(PORT_LLIGHT, SENSOR_TYPE_LIGHT);
     bool charging = false;
     unsigned int prevSeenTime = 0;
 
     PlayTone(TONE_C6,500);
     Wait(5000);
-    int lightBaseline = Sensor(PORT_LIGHT);
+    PlayTone(TONE_D6,500);
+    int rlightBaseline = Sensor(PORT_RLIGHT),
+        llightBaseline = Sensor(PORT_LLIGHT)/10;
+    bool foundTarget;
+    unsigned int time;
+    int rlight,llight;
+    int state = STATE_SEARCHING;
+    bool leftFound,rightFound;
+    long startCount;
+    int turnDir = 1;
 
     while(1) {
-        bool foundTarget = (SensorUS(PORT_US) < 40);
-        unsigned int time = CurrentTick();
-        int light = Sensor(PORT_LIGHT);
-        int color = SensorHTColorNum(PORT_COLOR);
-        if(foundTarget) {
-            if(!charging) {
-                //PlayTone(TONE_A5,500);
-            }
-            charging = true;
-            prevSeenTime = time;
-        } else if(time-prevSeenTime >= TARGET_TIMEOUT) {
-            charging = false;
+        time = CurrentTick();
+        rlight = Sensor(PORT_RLIGHT);
+        llight = Sensor(PORT_LLIGHT)/10;
+        leftFound  = (llight > (llightBaseline+10));
+        rightFound = (rlight > (rlightBaseline+10));
+        if(leftFound) {
+            turnDir = 1;
+        } else if(rightFound) {
+            turnDir = -1;
         }
-        if(charging) {
-            OnFwdSync(PORT_MOTORS,-100,0);
-        } else {
-            Off(PORT_LMOTOR);
-            OnRev(PORT_RMOTOR,100);
-        }
-        if(true && (/*color == 15 || */light > lightBaseline+30)) {
-            //PlayTone(TONE_B5,500);
+        if(state != STATE_REVERSING
+           && (leftFound || rightFound)) {
+            Off(PORT_MOTORS);
+            PlayTone(TONE_B5,200);
+            state = STATE_REVERSING;
+            
+            startCount = MotorRotationCount(PORT_LMOTOR);
             RotateMotorEx(PORT_MOTORS,100,200,0,true,false);
-            RotateMotor(PORT_RMOTOR,100,-400);
+            RotateMotorEx(PORT_MOTORS,-100,400,100,true,false);
             charging = false;
+        }
+    
+        int prevState = state;
+        switch(state) {
+        case STATE_SEARCHING:
+            OnFwdSync(PORT_MOTORS,-100,turnDir*100);
+            foundTarget = (SensorUS(PORT_US) < 40);
+            if(foundTarget) {
+                state = STATE_CHARGING;
+                prevSeenTime = time;
+            }
+            break;
+        case STATE_CHARGING:
+            OnFwdSync(PORT_MOTORS,-100,0);
+            if(time-prevSeenTime >= TARGET_TIMEOUT) {
+                state = STATE_SEARCHING;
+            }
+            break;
+        case STATE_REVERSING:
+            OnFwdSync(PORT_MOTORS,100,0);
+            if(abs(startCount-MotorRotationCount(PORT_LMOTOR)) > 400) {
+                state = STATE_SEARCHING;
+            }
+            break;
+        }
+        if(state != prevState) {
+            Off(PORT_MOTORS);
         }
     }
 }
