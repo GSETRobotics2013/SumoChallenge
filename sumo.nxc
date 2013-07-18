@@ -10,19 +10,24 @@
 #define STATE_SEARCHING 0
 #define STATE_CHARGING  1
 #define STATE_REVERSING 2
+#define STATE_DODGING   3
 
 bool enemyFound(byte portUS) {
     return SensorUS(portUS) < 40;
 }
-void handleEnemies(byte portUS,int& state,
+bool handleEnemies(byte portUS,int& state,
                    long& prevSeenTime,long time) {
-    if(state != STATE_REVERSING && enemyFound(portUS)) {
+    if(time > prevSeenTime+100 &&
+       (state == STATE_SEARCHING || state == STATE_CHARGING) &&
+       enemyFound(portUS)) {
         if(state != STATE_CHARGING) {
-            Off(PORT_MOTORS);
+            //Off(PORT_MOTORS);
             state = STATE_CHARGING;
+            return true;
         }
         prevSeenTime = time;
     }
+    return false;
 }
 
 task main() {
@@ -41,8 +46,8 @@ task main() {
     PlayTone(TONE_C6,100);
     Wait(990);
     PlayTone(TONE_D6,500);
-    unsigned int prevSeenTime    = 0,
-                 chargeBeginTime = 0;
+    unsigned int prevSeenTime = 0;
+    long chargeBegin = 0;
     int rlightBaseline = Sensor(PORT_RLIGHT),
         llightBaseline = Sensor(PORT_LLIGHT)/10;
     bool foundTarget;
@@ -56,7 +61,10 @@ task main() {
 
     while(1) {
         time = CurrentTick();
-        handleEnemies(PORT_US,state,prevSeenTime,time);
+        
+        if(handleEnemies(PORT_US,state,prevSeenTime,time)) {
+            chargeBegin = MotorRotationCount(PORT_LMOTOR);
+        }
         rlight = Sensor(PORT_RLIGHT);
         llight = Sensor(PORT_LLIGHT)/10;
         leftFound  = (llight > (llightBaseline+10));
@@ -76,7 +84,9 @@ task main() {
             startCount = MotorRotationCount(PORT_LMOTOR);
         }
     
-        handleEnemies(PORT_US,state,prevSeenTime,time);
+        if(handleEnemies(PORT_US,state,prevSeenTime,time)) {
+            chargeBegin = MotorRotationCount(PORT_LMOTOR);
+        }
         prevState = state;
         switch(state) {
         case STATE_SEARCHING:
@@ -87,11 +97,23 @@ task main() {
             OnFwd(PORT_MOTORS,-100);
             if(time-prevSeenTime >= TARGET_TIMEOUT) {
                 state = STATE_SEARCHING;
+            } else if(abs(chargeBegin
+                          -MotorRotationCount(PORT_LMOTOR))
+                      > 1200) {
+                startCount = MotorRotationCount(PORT_RMOTOR);
+                state = STATE_DODGING;
             }
             break;
         case STATE_REVERSING:
             OnFwd(PORT_MOTORS,100);
             if(abs(startCount-MotorRotationCount(PORT_LMOTOR)) > 200) {
+                state = STATE_SEARCHING;
+            }
+            break;
+        case STATE_DODGING:
+            OnFwd(PORT_RMOTOR,100);
+            OnFwd(PORT_LMOTOR,10);
+            if(abs(startCount-MotorRotationCount(PORT_RMOTOR)) > 1600) {
                 state = STATE_SEARCHING;
             }
             break;
